@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BuildPlan, CriticResult, Node, SectionPatch } from "@swarm/dsl";
-import type { AgentRuntime, CriticOutcome, CriticRequest, EditOutcome, EditRequest, PlanRequest, PlanResult, PlanSectionRequest, PlanSectionResult, RefineOutcome, RefineRequest, SectionRequest, SectionResult } from "@swarm/agent-runtime";
+import type { AgentRuntime, ArtboardRequest, ArtboardResult, CreativeSetRequest, CreativeSetResult, CriticOutcome, CriticRequest, EditOutcome, EditRequest, PlanRequest, PlanResult, PlanSectionRequest, PlanSectionResult, RefineOutcome, RefineRequest, SectionRequest, SectionResult } from "@swarm/agent-runtime";
 import { runBuild } from "./build.js";
 import { runRevision, undoRevision, expandSelection } from "./revise.js";
 import { runSectionAddition } from "./add-section.js";
@@ -58,6 +58,31 @@ const runtime = (overrides: Partial<AgentRuntime> = {}): AgentRuntime => ({
   name: "test",
   async plan(_request: PlanRequest): Promise<PlanResult> {
     return { plan, sessionId: "planner" };
+  },
+  async planCreativeSet(request: CreativeSetRequest): Promise<CreativeSetResult> {
+    return {
+      plan: {
+        title: "Mock Creative",
+        concept: request.prompt,
+        theme: plan.theme,
+        formatId: request.formatId,
+        artboards: [{ id: "cover", role: "cover", brief: request.prompt }],
+      },
+      sessionId: "creative-director",
+    };
+  },
+  async buildArtboard(request: ArtboardRequest): Promise<ArtboardResult> {
+    return {
+      patch: {
+        artboardId: request.artboard.id,
+        node: {
+          id: request.artboard.id,
+          type: "artboard",
+          children: [{ id: `${request.artboard.id}-title`, type: "heading", text: request.artboard.brief }],
+        },
+      },
+      sessionId: "artboard",
+    };
   },
   async planSection(request: PlanSectionRequest): Promise<PlanSectionResult> {
     return {

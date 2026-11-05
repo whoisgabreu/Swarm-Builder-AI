@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BuildPlan, SectionKind } from "@swarm/dsl";
 import { PREVIEW_SHELL } from "@swarm/swarm-runtime";
+import { CreativeStudio } from "./CreativeStudio.js";
+import { ModeToggle, type StudioMode } from "./ModeToggle.js";
+import { formatCents, formatUsd } from "./format.js";
 import type {
   AgentInfo,
   BuildEvent,
@@ -135,11 +138,11 @@ const describe = (event: SequencedEvent): string => {
       return `Concluído em ${(event.stats.durationMs / 1000).toFixed(1)}s`;
     case "run.failed":
       return `Falha: ${event.message}`;
+    default:
+      return event.type;
   }
 };
 
-const formatUsd = (value: number): string => `US$ ${value.toFixed(value < 0.1 ? 3 : 2).replace(".", ",")}`;
-const formatCents = (value: number): string => `${(value * 100).toFixed(1).replace(".", ",")}¢ USD`;
 const issueStatusLabel = (status: IssueView["status"]): string =>
   status === "fixing" ? "corrigindo" : status === "fixed" ? "corrigido" : status === "failed" ? "falhou" : "aberto";
 
@@ -166,6 +169,7 @@ export function App() {
   const [error, setError] = useState("");
   const [events, setEvents] = useState<SequencedEvent[]>([]);
   const [runtimeName, setRuntimeName] = useState("runtime");
+  const [mode, setMode] = useState<StudioMode>("landing");
   const [tour, setTour] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -674,6 +678,8 @@ export function App() {
     await navigator.clipboard.writeText(html).catch(() => {});
   }, [html]);
 
+  if (mode === "creative") return <CreativeStudio onModeChange={setMode} />;
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -685,6 +691,7 @@ export function App() {
           </div>
         </div>
         <div className="topbar-meta">
+          <ModeToggle mode={mode} onChange={setMode} />
           <span className={`phase phase-${phase}`}>{displayStatus}</span>
           <span className="dot-live" />
           <span>{runtimeName} runtime</span>

@@ -1,6 +1,10 @@
-import type { BuildPlan, CriticResult, Node, SectionPatch, SectionSpec } from "@swarm/dsl";
+import type { ArtboardPatch, BuildPlan, CreativeSetPlan, CriticResult, Node, SectionPatch, SectionSpec } from "@swarm/dsl";
 import type {
   AgentRuntime,
+  ArtboardRequest,
+  ArtboardResult,
+  CreativeSetRequest,
+  CreativeSetResult,
   CriticOutcome,
   CriticRequest,
   EditOutcome,
@@ -313,6 +317,59 @@ export class MockRuntime implements AgentRuntime {
   async buildSection(request: SectionRequest): Promise<SectionResult> {
     const patch: SectionPatch = { sectionId: request.section.id, node: mockSection(request.section) };
     return { patch, sessionId: `mock-${request.section.id}`, cost: 0 };
+  }
+
+  async planCreativeSet(request: CreativeSetRequest): Promise<CreativeSetResult> {
+    const roles = ["cover", "value", "proof", "cta", "custom"] as const;
+    const count = Math.max(1, Math.min(8, request.cardCount));
+    const plan: CreativeSetPlan = {
+      title: request.brand ?? "Clarity Creative",
+      concept: request.prompt,
+      theme: {
+        colors: { background: "#0B0B0D", surface: "#16161C", text: "#F5F3EF", muted: "#9C9AA0", primary: "#C6F24E", primaryText: "#10120A", accent: "#8B7BFF", border: "#2A2A35" },
+        fonts: { body: "Inter, system-ui, sans-serif", display: "Inter, system-ui, sans-serif" },
+        radius: "24px",
+        spacing: "24px",
+      },
+      formatId: request.formatId,
+      artboards: Array.from({ length: count }, (_, index) => ({
+        id: `${roles[index % roles.length]}-${index + 1}`,
+        role: roles[index % roles.length]!,
+        brief: index === 0 ? request.prompt : `Card ${index + 1}: continue the narrative with one clear idea.`,
+      })),
+    };
+    return { plan, sessionId: "mock-creative-director", cost: 0 };
+  }
+
+  async buildArtboard(request: ArtboardRequest): Promise<ArtboardResult> {
+    const size = request.plan.formatId === "ig-portrait" ? { width: 1080, height: 1350 } : { width: 1080, height: 1080 };
+    const patch: ArtboardPatch = {
+      artboardId: request.artboard.id,
+      node: {
+        id: request.artboard.id,
+        type: "artboard",
+        style: {
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          position: "relative",
+          overflow: "hidden",
+          background: "linear-gradient(145deg, #0B0B0D 0%, #1E1E2A 100%)",
+          color: "#F5F3EF",
+          padding: "80px",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          gap: "28px",
+        },
+        children: [
+          { id: `${request.artboard.id}-eyebrow`, type: "text", text: request.plan.title.toUpperCase(), style: { color: "#C6F24E", fontSize: "24px", fontWeight: "700", letterSpacing: "0.14em" } },
+          { id: `${request.artboard.id}-title`, type: "heading", level: 1, text: request.artboard.brief, style: { fontSize: request.artboard.role === "cover" ? "100px" : "76px", lineHeight: "0.98", letterSpacing: "-0.045em", maxWidth: "900px" } },
+          { id: `${request.artboard.id}-body`, type: "text", text: request.plan.concept, style: { fontSize: "30px", lineHeight: "1.35", color: "#9C9AA0", maxWidth: "760px" } },
+          { id: `${request.artboard.id}-brand`, type: "text", text: request.plan.title, style: { fontSize: "24px", fontWeight: "700", marginTop: "40px" } },
+        ],
+      },
+    };
+    return { patch, sessionId: "mock-artboard", cost: 0 };
   }
 
   async planSection(request: PlanSectionRequest): Promise<PlanSectionResult> {

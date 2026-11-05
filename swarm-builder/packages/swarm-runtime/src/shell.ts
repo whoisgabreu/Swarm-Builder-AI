@@ -79,6 +79,7 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
   var renderBusy = false;
   var renderGeneration = 0;
   var selectMode = false;
+  var uiScale = 1;
   var selectedNode = null;
   var selectedNodes = [];
   var highlightedNodes = [];
@@ -567,6 +568,12 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
     if (dot) dot.style.background = "#0D99FF";
   }
 
+  function applyUiScale() {
+    if (!composer) return;
+    composer.style.transformOrigin = "top left";
+    composer.style.transform = "scale(" + uiScale + ")";
+  }
+
   function positionComposer() {
     if (!composer || !composerNodeId) return;
     var el = nodeEls[composerNodeId];
@@ -575,8 +582,8 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
       return;
     }
     var rect = el.getBoundingClientRect();
-    var width = composer.offsetWidth || 310;
-    var height = composer.offsetHeight || 150;
+    var width = (composer.offsetWidth || 310) * uiScale;
+    var height = (composer.offsetHeight || 150) * uiScale;
     var anchor = composerAnchor || { dx: 24, dy: 24 };
     var x = rect.left + anchor.dx;
     var y = rect.top + anchor.dy + 12;
@@ -703,6 +710,7 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
         var clickYExisting = typeof data.clickY === "number" ? data.clickY : rectExisting.top + 24;
         composerAnchor = { dx: clickXExisting - rectExisting.left, dy: clickYExisting - rectExisting.top };
       }
+      applyUiScale();
       updateComposerHead();
       positionComposer();
       return;
@@ -730,6 +738,7 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
     composer = box;
     composerOpen = true;
     composerBusy = false;
+    applyUiScale();
     if (composerAgentId) {
       var expandButton = box.querySelector('[data-act="expand"]');
       if (expandButton) expandButton.style.display = "none";
@@ -835,6 +844,11 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
         if (!data.control.select && composer) closeComposer(true);
       }
       if (Array.isArray(data.control.highlightNodes)) highlightNodes(data.control.highlightNodes);
+      if (typeof data.control.uiScale === "number" && isFinite(data.control.uiScale)) {
+        uiScale = Math.max(0.25, Math.min(4, data.control.uiScale));
+        applyUiScale();
+        positionComposer();
+      }
       if (data.control.composer) openComposer(data.control.composer);
       if (data.control.composerForAgent) openComposerForAgent(data.control.composerForAgent);
       if (typeof data.control.composerError === "string") composerError(data.control.composerError);
@@ -852,10 +866,11 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
       agents[event.agent.id] = event.agent;
       moveCursor(event.agent, event.sectionId, true);
       followSection(event.sectionId);
+      if (event.label) cursorLabel(event.agent, event.label);
       return;
     }
     if (event.type === "patch.applied") {
-      markDone(event.agentId, event.fallback ? "fallback" : "pronto");
+      markDone(event.agentId, event.label || (event.fallback ? "fallback" : "pronto"));
       return;
     }
     if (event.type === "task.failed") {

@@ -1,22 +1,30 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import {
   BuildPlanSchema,
+  ArtboardPatchSchema,
+  CreativeSetPlanSchema,
   CriticResultSchema,
   NewSectionPlanSchema,
   RefinementResultSchema,
   SectionPatchSchema,
   z,
   type BuildPlan,
+  type ArtboardPatch,
+  type CreativeSetPlan,
   type CriticResult,
   type NewSectionPlan,
   type Node,
   type RefinementResult,
   type SectionPatch,
 } from "@swarm/dsl";
-import { criticPrompt, editPrompt, planPrompt, planSectionPrompt, refinePrompt, sectionPrompt } from "./prompts.js";
+import { artboardPrompt, creativeDirectorPrompt, criticPrompt, editPrompt, planPrompt, planSectionPrompt, refinePrompt, sectionPrompt } from "./prompts.js";
 import { startOpencodeServer, type OpencodeServer } from "./server.js";
 import type {
   AgentRuntime,
+  ArtboardRequest,
+  ArtboardResult,
+  CreativeSetRequest,
+  CreativeSetResult,
   CriticOutcome,
   CriticRequest,
   EditOutcome,
@@ -237,6 +245,32 @@ export class OpenCodeRuntime implements AgentRuntime {
       agent: "swarm-section",
       prompt: sectionPrompt(request),
       schema: SectionPatchSchema,
+      parentSessionId: request.parentSessionId,
+      model: this.sectionModel,
+      timeoutMs: this.sectionTimeoutMs,
+    });
+    return { patch: result.value, sessionId: result.sessionId, cost: result.cost };
+  }
+
+  async planCreativeSet(request: CreativeSetRequest): Promise<CreativeSetResult> {
+    const result = await this.runStructured<CreativeSetPlan>({
+      title: "Swarm Creative Director — CreativeSetPlan",
+      agent: "swarm-creative-director",
+      prompt: creativeDirectorPrompt(request),
+      schema: CreativeSetPlanSchema,
+      parentSessionId: request.parentSessionId,
+      model: this.model,
+      timeoutMs: this.plannerTimeoutMs,
+    });
+    return { plan: result.value, sessionId: result.sessionId, cost: result.cost };
+  }
+
+  async buildArtboard(request: ArtboardRequest): Promise<ArtboardResult> {
+    const result = await this.runStructured<ArtboardPatch>({
+      title: `Swarm Artboard — ${request.artboard.id}`,
+      agent: "swarm-artboard",
+      prompt: artboardPrompt(request),
+      schema: ArtboardPatchSchema,
       parentSessionId: request.parentSessionId,
       model: this.sectionModel,
       timeoutMs: this.sectionTimeoutMs,

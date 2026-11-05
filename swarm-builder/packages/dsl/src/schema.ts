@@ -97,6 +97,7 @@ export const ResponsiveSchema = z.object({
 
 export const NodeTypeSchema = z.enum([
   "page",
+  "artboard",
   "section",
   "stack",
   "grid",

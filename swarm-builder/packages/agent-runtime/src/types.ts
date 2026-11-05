@@ -1,4 +1,4 @@
-import type { BuildPlan, CriticResult, CursorRole, Node, RefinementResult, Responsive, SectionKind, SectionPatch, SectionSpec } from "@swarm/dsl";
+import type { ArtboardPatch, ArtboardSpec, BuildPlan, CreativeFormatId, CreativeSetPlan, CriticResult, CursorRole, Node, RefinementResult, Responsive, SectionKind, SectionPatch, SectionSpec } from "@swarm/dsl";
 
 export type PlanRequest = {
   brief: string;
@@ -41,6 +41,37 @@ export type CriticAuditIssue = {
     style?: Record<string, string>;
     responsive?: Responsive;
   };
+};
+
+export type CreativeSetRequest = {
+  prompt: string;
+  brand?: string;
+  cta?: string;
+  formatId: CreativeFormatId;
+  cardCount: number;
+  parentSessionId?: string;
+};
+
+export type CreativeSetResult = {
+  plan: CreativeSetPlan;
+  sessionId: string;
+  cost?: number;
+};
+
+export type ArtboardRequest = {
+  plan: CreativeSetPlan;
+  artboard: ArtboardSpec;
+  index: number;
+  before?: ArtboardSpec;
+  after?: ArtboardSpec;
+  parentSessionId?: string;
+  retryNote?: string;
+};
+
+export type ArtboardResult = {
+  patch: ArtboardPatch;
+  sessionId: string;
+  cost?: number;
 };
 
 export type PlanSectionRequest = {
@@ -91,6 +122,8 @@ export type EditRequest = {
   agentName: string;
   role?: CursorRole;
   parentSessionId?: string;
+  surface?: "page" | "artboard";
+  format?: { width: number; height: number };
 };
 
 export type EditOutcome = {
@@ -116,6 +149,8 @@ export type CriticOutcome = {
 export interface AgentRuntime {
   readonly name: string;
   plan(request: PlanRequest): Promise<PlanResult>;
+  planCreativeSet(request: CreativeSetRequest): Promise<CreativeSetResult>;
+  buildArtboard(request: ArtboardRequest): Promise<ArtboardResult>;
   planSection(request: PlanSectionRequest): Promise<PlanSectionResult>;
   buildSection(request: SectionRequest): Promise<SectionResult>;
   refineSection(request: RefineRequest): Promise<RefineOutcome>;

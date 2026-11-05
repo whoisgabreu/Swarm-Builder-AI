@@ -87,6 +87,7 @@ html{scroll-behavior:smooth}
 body{margin:0;background:var(--sw-background);color:var(--sw-text);font-family:var(--sw-font-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 img{display:block;max-width:100%}
 a{color:inherit}
+.sw-artboard{position:relative;overflow:hidden}
 .sw-section{position:relative;width:100%;padding:88px 24px;scroll-margin-top:112px}
 @media(max-width:760px){.sw-section{scroll-margin-top:136px}}
 .sw-inner{width:100%;max-width:1120px;margin:0 auto}
@@ -123,6 +124,8 @@ const defaultsFor = (node: Node): Style => {
   switch (node.type) {
     case "page":
       return { width: "100%" };
+    case "artboard":
+      return { position: "relative", overflow: "hidden" };
     case "section":
       return { position: "relative", width: "100%" };
     case "stack":
@@ -178,6 +181,8 @@ const renderNode = (node: Node): string => {
   switch (node.type) {
     case "page":
       return `<main class="sw-page"${common}>${inner}</main>`;
+    case "artboard":
+      return `<div class="sw-artboard"${common}>${inner}</div>`;
     case "section": {
       const kind = String(prop(node, "kind") ?? "");
       const klass = `sw-section${kind ? ` sw-${kind}` : ""}`;
@@ -297,6 +302,8 @@ export const nodeShell = (node: Node): NodeShell => {
   switch (node.type) {
     case "page":
       return { tag: "main", className: "sw-page", style, attrs };
+    case "artboard":
+      return { tag: "div", className: "sw-artboard", style, attrs };
     case "section": {
       const kind = String(prop(node, "kind") ?? "");
       return { tag: "section", className: `sw-section${kind ? ` sw-${kind}` : ""}`, style, attrs };
@@ -458,6 +465,36 @@ export const normalizeAnchors = (root: Node, plan: BuildPlan): Node => {
   };
   walk(next);
   return next;
+};
+
+export const compileArtboard = (input: {
+  title: string;
+  plan: { theme: Theme };
+  root: Node;
+  width: number;
+  height: number;
+}): string => {
+  const html = renderNode(input.root);
+  const rules = collectResponsiveRules(input.root);
+  const responsive = (rules.mobile.length ? `@media (max-width:767px){${rules.mobile.join("")}}` : "") +
+    (rules.tablet.length ? `@media (min-width:768px) and (max-width:1023px){${rules.tablet.join("")}}` : "");
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(input.title)}</title>
+<style>${tokenStyle(input.plan.theme)}
+${BASE_CSS}
+body{margin:0;background:${input.plan.theme.colors.background};overflow:hidden}
+.sw-artboard{width:${input.width}px;height:${input.height}px}
+${responsive}
+</style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
 };
 
 export type CompileInput = {

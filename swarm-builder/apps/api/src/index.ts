@@ -4,11 +4,20 @@ import { dirname, resolve } from "node:path";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { z } from "zod";
-import { SectionKindSchema } from "@swarm/dsl";
+import JSZip from "jszip";
+import { CREATIVE_FORMATS, CreativeFormatIdSchema, SectionKindSchema } from "@swarm/dsl";
 import { createMockRuntime, OpenCodeRuntime, type AgentRuntime } from "@swarm/agent-runtime";
 import type { SequencedEvent } from "@swarm/protocol";
 import { runBuild } from "./build.js";
 import { runSectionAddition } from "./add-section.js";
+import { creativeArtboardView, creativeProjectView, creativeProjects, runCreativeBuild, type CreativeProjectRecord } from "./creative.js";
+import {
+  expandCreativeSelection,
+  runCreativeRevision,
+  undoCreativeRevision,
+  type CreativeRevisionTarget,
+} from "./creative-revise.js";
+import { renderArtboardImage } from "./render-image.js";
 import { expandSelection, runRevision, undoRevision, type RevisionTarget } from "./revise.js";
 import { projectView, projects, runs, type ProjectRecord, type RunRecord } from "./store.js";
 import { RunChannel } from "./events.js";
@@ -48,6 +57,36 @@ const reviseSchema = z
 const expandSchema = z.object({
   nodeIds: z.array(z.string().max(80)).min(1).max(80),
   by: z.literal("text"),
+});
+
+const createCreativeSchema = z.object({
+  prompt: z.string().trim().min(10).max(4000),
+  brand: z.string().trim().max(120).optional(),
+  cta: z.string().trim().max(120).optional(),
+  formatId: CreativeFormatIdSchema.default("ig-square"),
+  cardCount: z.number().int().min(1).max(8).default(3),
+});
+
+const creativeExportSchema = z.object({
+  format: z.enum(["png", "jpeg"]).default("png"),
+  scale: z.number().int().min(1).max(2).default(1),
+  artboardIds: z.array(z.string().max(80)).max(8).optional(),
+});
+
+const creativeReviseSchema = z
+  .object({
+    request: z.string().trim().min(3).max(2000),
+    nodeId: z.string().max(80).optional(),
+    nodeIds: z.array(z.string().max(80)).max(80).optional(),
+    agentId: z.string().max(120).optional(),
+    expand: z.enum(["text"]).optional(),
+  })
+  .refine((value) => Boolean(value.nodeId || value.nodeIds?.length || value.agentId), {
+    message: "select one or more nodes or an agent",
+  });
+
+const creativeExpandSchema = z.object({
+  nodeIds: z.array(z.string().max(80)).min(1).max(80),
 });
 
 const addSectionSchema = z.object({
@@ -250,6 +289,184 @@ app.post("/api/projects/:id/selection/expand", async (request, reply) => {
   if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid selection" });
   const matches = expandSelection(project, parsed.data.nodeIds, parsed.data.by);
   return { matches };
+});
+
+app.post("/api/creative/projects", async (request, reply) => {
+  const parsed = createCreativeSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid creative brief" });
+  const project: CreativeProjectRecord = {
+    id: randomUUID(),
+    prompt: parsed.data.prompt,
+    brand: parsed.data.brand,
+    cta: parsed.data.cta,
+    formatId: parsed.data.formatId,
+    cardCount: parsed.data.cardCount,
+    status: "idle",
+    createdAt: Date.now(),
+    artboards: [],
+    cost: 0,
+  };
+  creativeProjects.set(project.id, project);
+  return reply.code(201).send(creativeProjectView(project));
+});
+
+app.get("/api/creative/projects/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const project = creativeProjects.get(id);
+  if (!project) return reply.code(404).send({ error: "creative project not found" });
+  return creativeProjectView(project);
+});
+
+app.post("/api/creative/projects/:id/build", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const project = creativeProjects.get(id);
+  if (!project) return reply.code(404).send({ error: "creative project not found" });
+  if (buildInFlight.has(project.status)) return reply.code(409).send({ error: "build already running", runId: project.runId });
+  const run: RunRecord = {
+    id: randomUUID(),
+    projectId: project.id,
+    status: "planning",
+    startedAt: Date.now(),
+    channel: new RunChannel(),
+  };
+  runs.set(run.id, run);
+  project.runId = run.id;
+  project.status = "planning";
+  project.artboards = [];
+  project.error = undefined;
+  const requestedConcurrency = Number(process.env.SWARM_CONCURRENCY ?? 3);
+  const concurrency = Number.isFinite(requestedConcurrency)
+    ? Math.max(1, Math.min(8, Math.trunc(requestedConcurrency)))
+    : 3;
+  void runCreativeBuild({ runtime, project, run, concurrency }).catch((error) => {
+    app.log.error(error);
+    project.status = "failed";
+    project.error = error instanceof Error ? error.message : String(error);
+    run.status = "failed";
+    run.finishedAt = Date.now();
+    run.channel.emit({ type: "creative.failed", message: project.error, at: Date.now() });
+  });
+  return reply.code(202).send({ runId: run.id, projectId: project.id });
+});
+
+app.post("/api/creative/projects/:id/artboards/:artboardId/revise", async (request, reply) => {
+  const { id, artboardId } = request.params as { id: string; artboardId: string };
+  const project = creativeProjects.get(id);
+  if (!project) return reply.code(404).send({ error: "creative project not found" });
+  const artboard = project.artboards.find((item) => item.id === artboardId);
+  if (!artboard?.artifact) return reply.code(404).send({ error: "artboard not ready" });
+  if (buildInFlight.has(project.status)) return reply.code(409).send({ error: "a build or revision is already running", runId: project.runId });
+  const parsed = creativeReviseSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid revision" });
+  const run: RunRecord = {
+    id: randomUUID(),
+    projectId: project.id,
+    status: "reviewing",
+    startedAt: Date.now(),
+    channel: new RunChannel(),
+  };
+  runs.set(run.id, run);
+  project.status = "reviewing";
+  project.runId = run.id;
+  void runCreativeRevision({
+    runtime,
+    project,
+    artboardId,
+    run,
+    request: parsed.data.request,
+    target: parsed.data as CreativeRevisionTarget,
+  }).catch((error) => {
+    app.log.error(error);
+    project.status = "done";
+    run.status = "failed";
+    run.finishedAt = Date.now();
+    run.channel.emit({
+      type: "revision.done",
+      revisionId: run.id,
+      success: false,
+      summary: error instanceof Error ? error.message : String(error),
+      cost: 0,
+      at: Date.now(),
+    });
+  });
+  return reply.code(202).send({ runId: run.id });
+});
+
+app.post("/api/creative/projects/:id/artboards/:artboardId/undo", async (request, reply) => {
+  const { id, artboardId } = request.params as { id: string; artboardId: string };
+  const project = creativeProjects.get(id);
+  if (!project) return reply.code(404).send({ error: "creative project not found" });
+  if (buildInFlight.has(project.status)) return reply.code(409).send({ error: "a build or revision is already running" });
+  const restored = undoCreativeRevision(project, artboardId);
+  if (!restored) return reply.code(409).send({ error: "nothing to undo" });
+  const artboard = project.artboards.find((item) => item.id === artboardId);
+  return {
+    ...restored,
+    artboard: artboard ? creativeArtboardView(artboard) : null,
+    undoAvailable: Boolean(artboard?.undoStack.length),
+  };
+});
+
+app.post("/api/creative/projects/:id/artboards/:artboardId/selection/expand", async (request, reply) => {
+  const { id, artboardId } = request.params as { id: string; artboardId: string };
+  const project = creativeProjects.get(id);
+  if (!project) return reply.code(404).send({ error: "creative project not found" });
+  const artboard = project.artboards.find((item) => item.id === artboardId);
+  if (!artboard?.artifact) return reply.code(404).send({ error: "artboard not ready" });
+  const parsed = creativeExpandSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid selection" });
+  return { matches: expandCreativeSelection(project, artboard, parsed.data.nodeIds) };
+});
+
+app.get("/api/creative/projects/:id/artboards/:artboardId/export", async (request, reply) => {
+  const { id, artboardId } = request.params as { id: string; artboardId: string };
+  const project = creativeProjects.get(id);
+  if (!project) return reply.code(404).send({ error: "creative project not found" });
+  const artboard = project.artboards.find((item) => item.id === artboardId);
+  if (!artboard?.html) return reply.code(404).send({ error: "artboard not ready" });
+  const query = request.query as { format?: string; scale?: string };
+  const format = query.format === "jpeg" ? "jpeg" : "png";
+  const requestedScale = Number(query.scale ?? 1);
+  const scale = Number.isFinite(requestedScale) ? Math.max(1, Math.min(2, Math.trunc(requestedScale))) : 1;
+  const creativeFormat = CREATIVE_FORMATS[project.formatId];
+  const buffer = await renderArtboardImage({
+    html: artboard.html,
+    width: creativeFormat.width,
+    height: creativeFormat.height,
+    scale,
+    format,
+  });
+  reply.header("Content-Type", format === "jpeg" ? "image/jpeg" : "image/png");
+  reply.header("Content-Disposition", `attachment; filename="${project.id}-${artboard.id}@${scale}x.${format}"`);
+  return reply.send(buffer);
+});
+
+app.post("/api/creative/projects/:id/export", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const project = creativeProjects.get(id);
+  if (!project) return reply.code(404).send({ error: "creative project not found" });
+  const parsed = creativeExportSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid export" });
+  const selected = project.artboards.filter(
+    (artboard) => artboard.html && (!parsed.data.artboardIds?.length || parsed.data.artboardIds.includes(artboard.id)),
+  );
+  if (!selected.length) return reply.code(409).send({ error: "no artboards ready" });
+  const creativeFormat = CREATIVE_FORMATS[project.formatId];
+  const zip = new JSZip();
+  for (const artboard of selected) {
+    const buffer = await renderArtboardImage({
+      html: artboard.html,
+      width: creativeFormat.width,
+      height: creativeFormat.height,
+      scale: parsed.data.scale,
+      format: parsed.data.format,
+    });
+    zip.file(`${String(artboard.index + 1).padStart(2, "0")}-${artboard.id}@${parsed.data.scale}x.${parsed.data.format}`, buffer);
+  }
+  const archive = await zip.generateAsync({ type: "nodebuffer" });
+  reply.header("Content-Type", "application/zip");
+  reply.header("Content-Disposition", `attachment; filename="creative-${project.id}.zip"`);
+  return reply.send(archive);
 });
 
 app.get("/api/runs/:id", async (request, reply) => {

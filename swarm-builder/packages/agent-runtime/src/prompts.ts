@@ -1,5 +1,5 @@
 import type { BuildPlan, Node, SectionSpec } from "@swarm/dsl";
-import type { CriticRequest, EditRequest, PlanSectionRequest, RefineRequest } from "./types.js";
+import type { ArtboardRequest, CreativeSetRequest, CriticRequest, EditRequest, PlanSectionRequest, RefineRequest } from "./types.js";
 
 const RESPONSIVE_RULES = [
   "Responsive requirements:",
@@ -146,6 +146,50 @@ export const refinePrompt = (input: RefineRequest): string =>
     "Do not replace the whole tree. Do not return markdown or explanations outside the JSON.",
   ].join("\n");
 
+export const creativeDirectorPrompt = (input: CreativeSetRequest): string =>
+  [
+    "You are the creative director of a swarm that builds static social-media creatives.",
+    `Create a creative set for: ${input.prompt}`,
+    input.brand ? `Brand: ${input.brand}` : "",
+    input.cta ? `CTA: ${input.cta}` : "",
+    `Format: ${input.formatId} (1080x1080 for ig-square, 1080x1350 for ig-portrait).`,
+    `Number of artboards: ${input.cardCount} (must be between 1 and 8).`,
+    "",
+    "Rules:",
+    "- One shared format and one shared theme for the whole set.",
+    "- Plan a carousel narrative: cover, value/proof, CTA.",
+    "- Each artboard must have a distinct role and a short brief.",
+    "- Use a strong editorial hierarchy, generous safe margins and one clear focal point.",
+    "- For images use deterministic https://picsum.photos/seed/<slug>/1200/1200 URLs.",
+    "- Do not use page sections, navbars or anchors.",
+    "- Return a CreativeSetPlan with title, concept, theme, formatId and artboards.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+export const artboardPrompt = (input: ArtboardRequest): string => {
+  const size = input.plan.formatId === "ig-portrait" ? { width: 1080, height: 1350 } : { width: 1080, height: 1080 };
+  return [
+    "Build exactly one artboard for a static social-media creative.",
+    "",
+    `Set concept:\n${JSON.stringify({ title: input.plan.title, concept: input.plan.concept, theme: input.plan.theme, formatId: input.plan.formatId }, null, 2)}`,
+    "",
+    `Artboard spec:\n${JSON.stringify(input.artboard, null, 2)}`,
+    `Position: ${input.index + 1} of ${input.plan.artboards.length}.`,
+    input.before ? `Previous artboard: ${JSON.stringify(input.before)}` : "This is the first artboard.",
+    input.after ? `Next artboard: ${JSON.stringify(input.after)}` : "This is the last artboard.",
+    "",
+    `Canvas: ${size.width}x${size.height}px. Root node type "artboard", id "${input.artboard.id}".`,
+    "Build the card with absolute-positioned layers inside the artboard. Keep 48-80px safe margins.",
+    "Use a background layer, a strong headline, concise body copy, brand mark and optional CTA.",
+    "You may use images, gradients, shapes drawn with stacks/divs, text and icons.",
+    "Do not use page, section, nav, anchors or scripts. Do not create more than 70 nodes.",
+    "Do not explain your reasoning. Return an ArtboardPatch.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+};
+
 export const planSectionPrompt = (input: PlanSectionRequest): string =>
   [
     "Create a SectionSpec for a NEW section that will be inserted into an existing page.",
@@ -179,8 +223,32 @@ export const planSectionPrompt = (input: PlanSectionRequest): string =>
     .filter(Boolean)
     .join("\n");
 
-export const editPrompt = (input: EditRequest): string =>
-  [
+export const editPrompt = (input: EditRequest): string => {
+  if (input.surface === "artboard") {
+    return [
+      `You are ${input.agentName}, the owner agent for this element of a static social-media artboard.`,
+      `The user requested a precise change: "${input.request}"`,
+      "",
+      `Artboard spec:\n${JSON.stringify(input.section, null, 2)}`,
+      input.format ? `Canvas: ${input.format.width}x${input.format.height}px. Keep the fixed canvas and all elements inside its bounds.` : "",
+      "",
+      `Target subtree:\n${JSON.stringify(input.node, null, 2)}`,
+      "",
+      input.targets?.length
+        ? `Selected targets:\n${JSON.stringify(input.targets, null, 2)}\nApply the same change consistently to all selected targets.`
+        : "",
+      `Allowed node ids (you may only patch these): ${input.allowedNodeIds.join(", ")}`,
+      input.role ? `Your specialist role: ${input.role}.` : "",
+      "",
+      "Preserve the artboard hierarchy, safe margins and visual style of the other cards.",
+      "Return a RefinementResult with small, targeted patches.",
+      "Do not create or remove nodes. Do not touch nodes outside the allowed ids.",
+      "Do not explain your reasoning. Emit the structured patches now.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return [
     `You are ${input.agentName}, the owner agent for this part of the page.`,
     `The user requested a precise change: "${input.request}"`,
     "",
@@ -203,6 +271,7 @@ export const editPrompt = (input: EditRequest): string =>
   ]
     .filter(Boolean)
     .join("\n");
+};
 
 export const criticPrompt = (input: CriticRequest): string => {
   const sections = input.plan.sections.map(({ id, kind, title, goal, layoutBrief, contentBrief }) => ({

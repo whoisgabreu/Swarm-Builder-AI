@@ -52,6 +52,20 @@
       "prompt": "{file:./prompts/section-planner.md}",
       "temperature": 0.35,
       "steps": 2
+    },
+    "swarm-creative-director": {
+      "description": "Plans a carousel/creative set with a shared theme and artboards.",
+      "mode": "all",
+      "prompt": "{file:./prompts/creative-director.md}",
+      "temperature": 0.45,
+      "steps": 2
+    },
+    "swarm-artboard": {
+      "description": "Builds one fixed-size social-media artboard as a structured patch.",
+      "mode": "all",
+      "prompt": "{file:./prompts/artboard.md}",
+      "temperature": 0.5,
+      "steps": 2
     }
   }
 }
