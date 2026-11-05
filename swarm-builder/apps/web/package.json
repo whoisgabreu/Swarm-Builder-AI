@@ -1,0 +1,25 @@
+{
+  "name": "@swarm/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@swarm/dsl": "*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "@swarm/protocol": "*",
+    "@swarm/swarm-runtime": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "vite": "^8.3.5"
+  }
+}

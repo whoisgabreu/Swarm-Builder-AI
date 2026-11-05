@@ -1,0 +1,36 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "icons/icon128.png",
+         "16": "icons/icon16.png",
+         "32": "icons/icon32.png",
+         "48": "icons/icon48.png"
+      },
+      "default_title": "Swarm Rebuild (Alt+Shift+S)"
+   },
+   "background": {
+      "service_worker": "background.js"
+   },
+   "commands": {
+      "_execute_action": {
+         "description": "Rebuild this page with the swarm",
+         "suggested_key": {
+            "default": "Alt+Shift+S",
+            "mac": "Alt+Shift+S"
+         }
+      }
+   },
+   "description": "Wipe any page to a blank canvas and watch a swarm of multiplayer cursors rebuild it, live.",
+   "icons": {
+      "128": "icons/icon128.png",
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtVE2JLi6A5yo3jkoYqiBRL3WK4+6vWrKQ1YokL5d3r4ilzIVXgoOVZZYI1zNOSIWZGXMzqGXAu10sFYYt7tpQfJx++XaLd9dedSWBfX+HLPs/BIpux5qZMLA6AQ1OtU+Nc9aPSSo8QnrFmeOdj+9TRi9cfU6muqadD/5i1jTN2YwLmnOKXksM+jrWmv9vBGGqHpFB91QvIOnK6L62po8L6EaEIBk/fvYLTKS2ktk+WMawHZqDQIe8n6hde9Cofng/UNvJWEu4fJ5MdQmvOgZvxgkb4Rlwd5OZ43U1N5Wf7EwFh2bA2W9I9I9wZniGqQU7v1aRvhNklbOh5EHXJE0iQIDAQAB",
+   "manifest_version": 3,
+   "name": "Swarm Rebuild",
+   "permissions": [ "activeTab", "scripting" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "1.0.0"
+}

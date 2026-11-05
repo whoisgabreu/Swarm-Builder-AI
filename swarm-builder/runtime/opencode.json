@@ -1,0 +1,57 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "permission": {
+    "edit": "deny",
+    "bash": "deny",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "task": "deny",
+    "question": "deny",
+    "skill": "deny"
+  },
+  "agent": {
+    "swarm-architect": {
+      "description": "Plans a complete landing page as a structured BuildPlan.",
+      "mode": "primary",
+      "prompt": "{file:./prompts/architect.md}",
+      "temperature": 0.4,
+      "steps": 2
+    },
+    "swarm-section": {
+      "description": "Builds one isolated page section as a structured SectionPatch.",
+      "mode": "all",
+      "prompt": "{file:./prompts/section.md}",
+      "temperature": 0.55,
+      "steps": 2
+    },
+    "swarm-critic": {
+      "description": "Reviews a rendered page and returns safe structured fixes.",
+      "mode": "all",
+      "prompt": "{file:./prompts/critic.md}",
+      "temperature": 0.2,
+      "steps": 2
+    },
+    "swarm-refiner": {
+      "description": "Refines one section as a specialist (layout, copy, media, style or content).",
+      "mode": "all",
+      "prompt": "{file:./prompts/refiner.md}",
+      "temperature": 0.45,
+      "steps": 2
+    },
+    "swarm-editor": {
+      "description": "Applies a precise user-requested change to nodes owned by a specific agent.",
+      "mode": "all",
+      "prompt": "{file:./prompts/editor.md}",
+      "temperature": 0.3,
+      "steps": 2
+    },
+    "swarm-section-planner": {
+      "description": "Plans a new page section to insert into an existing page.",
+      "mode": "all",
+      "prompt": "{file:./prompts/section-planner.md}",
+      "temperature": 0.35,
+      "steps": 2
+    }
+  }
+}
