@@ -16,6 +16,7 @@ const safeUrl = (value: string | undefined, fallback = "#"): string => {
   const url = value.trim();
   if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url) || /^tel:/i.test(url)) return url;
   if (url.startsWith("#") || url.startsWith("/")) return url;
+  if (/^(?:\.{0,2}\/)?[A-Za-z0-9][A-Za-z0-9._/-]*(?:\?[^<>"']*)?(?:#[^<>"']*)?$/.test(url)) return url;
   if (/^data:image\/(png|jpe?g|webp|gif|svg\+xml);/i.test(url)) return url;
   return fallback;
 };

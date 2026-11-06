@@ -19,7 +19,8 @@ Rules:
 - Keep the section self-contained and visually complete. Do not leave empty containers.
 - Stay within 40 nodes total and depth 5. Prefer a few strong elements over many wrappers.
 - Do not explain your reasoning. Return the JSON immediately.
-- For navigation and footer, stay compact; for hero, prioritize a strong headline and one clear CTA.
+- For navigation and footer, stay compact; use the provided site page paths for page links, and anchors only for sections on the same page.
+- For hero, prioritize a strong headline and one clear CTA.
 - Use real, specific copy in the language of the brief. No lorem ipsum.
 - Design for mobile 390px and tablet 768px as well as desktop.
 - Use `responsive.mobile` and `responsive.tablet` for layout changes that auto-fit/flex-wrap cannot express.

@@ -4,10 +4,14 @@ import { dirname, resolve } from "node:path";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { z } from "zod";
-import { SectionKindSchema } from "@swarm/dsl";
+import { SectionKindSchema, SitePlanSchema, normalizeSitePlan } from "@swarm/dsl";
 import { createMockRuntime, OpenCodeRuntime, type AgentRuntime } from "@swarm/agent-runtime";
 import type { SequencedEvent } from "@swarm/protocol";
 import { runBuild } from "./build.js";
+import { runSiteBuild } from "./site-build.js";
+import { expandSiteSelection, runSiteRevision, runSiteSectionAddition, undoSite } from "./site-revise.js";
+import { buildSiteZip } from "./site-export.js";
+import { pageRecordFromSpec, siteProjectView, siteProjects, type SiteProjectRecord } from "./site-store.js";
 import { runSectionAddition } from "./add-section.js";
 import { expandSelection, runRevision, undoRevision, type RevisionTarget } from "./revise.js";
 import { projectView, projects, runs, type ProjectRecord, type RunRecord } from "./store.js";
@@ -28,6 +32,41 @@ await app.register(cors, { origin: true });
 
 const createProjectSchema = z.object({
   prompt: z.string().trim().min(10).max(4000),
+});
+
+const createSiteSchema = z.object({
+  prompt: z.string().trim().min(10).max(4000),
+  brand: z.string().trim().max(120).optional(),
+});
+
+const updateSitePlanSchema = z.object({
+  plan: SitePlanSchema,
+});
+
+const siteReviseSchema = z
+  .object({
+    pageId: z.string().min(1).max(80),
+    request: z.string().trim().min(3).max(2000),
+    nodeId: z.string().max(80).optional(),
+    nodeIds: z.array(z.string().max(80)).max(80).optional(),
+    agentId: z.string().max(120).optional(),
+    expand: z.enum(["text"]).optional(),
+  })
+  .refine((value) => Boolean(value.nodeId || value.nodeIds?.length || value.agentId), {
+    message: "select one or more nodes or an agent",
+  });
+
+const siteAddSectionSchema = z.object({
+  prompt: z.string().trim().min(3).max(2000),
+  title: z.string().trim().max(160).optional(),
+  kind: SectionKindSchema.optional(),
+  insertIndex: z.number().int().min(0).max(20),
+  quality: z.enum(["solo", "split", "race"]).optional(),
+});
+
+const siteExpandSchema = z.object({
+  pageId: z.string().min(1).max(80),
+  nodeIds: z.array(z.string().max(80)).min(1).max(80),
 });
 
 const buildInFlight = new Set(["planning", "building", "reviewing"]);
@@ -84,6 +123,214 @@ app.post("/api/projects", async (request, reply) => {
   };
   projects.set(project.id, project);
   return reply.code(201).send(projectView(project));
+});
+
+app.post("/api/sites", async (request, reply) => {
+  const parsed = createSiteSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid site brief" });
+  try {
+    const planned = await runtime.planSite({ brief: parsed.data.prompt, brand: parsed.data.brand });
+    const plan = normalizeSitePlan(planned.plan);
+    const site: SiteProjectRecord = {
+      id: randomUUID(),
+      prompt: parsed.data.prompt,
+      brand: parsed.data.brand,
+      status: "idle",
+      createdAt: Date.now(),
+      plan,
+      planningCost: planned.cost ?? 0,
+      parentSessionId: planned.sessionId,
+      pages: plan.pages.map(pageRecordFromSpec),
+      layout: {},
+      agents: [],
+      ownership: {},
+      cost: planned.cost ?? 0,
+    };
+    siteProjects.set(site.id, site);
+    return reply.code(201).send(siteProjectView(site));
+  } catch (error) {
+    app.log.error(error);
+    return reply.code(502).send({ error: error instanceof Error ? error.message : "site planning failed" });
+  }
+});
+
+app.get("/api/sites/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  return siteProjectView(site);
+});
+
+app.patch("/api/sites/:id/plan", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  if (buildInFlight.has(site.status)) return reply.code(409).send({ error: "a build is already running" });
+  const parsed = updateSitePlanSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid site plan" });
+  const plan = normalizeSitePlan(parsed.data.plan);
+  site.plan = plan;
+  site.pages = plan.pages.map(pageRecordFromSpec);
+  site.layout = {};
+  site.agents = [];
+  site.ownership = {};
+  site.cost = site.planningCost;
+  site.stats = undefined;
+  site.error = undefined;
+  site.undoStack = [];
+  site.status = "idle";
+  return siteProjectView(site);
+});
+
+app.post("/api/sites/:id/build", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  if (!site.plan) return reply.code(409).send({ error: "site has no plan" });
+  if (buildInFlight.has(site.status)) return reply.code(409).send({ error: "a build is already running", runId: site.runId });
+  const run: RunRecord = {
+    id: randomUUID(),
+    projectId: site.id,
+    status: "planning",
+    startedAt: Date.now(),
+    channel: new RunChannel(),
+  };
+  runs.set(run.id, run);
+  site.runId = run.id;
+  site.status = "planning";
+  site.error = undefined;
+  site.stats = undefined;
+  site.undoStack = [];
+  void runSiteBuild({ runtime, site, run }).catch((error) => {
+    app.log.error(error);
+    site.status = "failed";
+    site.error = error instanceof Error ? error.message : String(error);
+    run.status = "failed";
+    run.finishedAt = Date.now();
+    run.channel.emit({ type: "run.failed", message: site.error, at: Date.now() });
+  });
+  return reply.code(202).send({ runId: run.id, siteId: site.id });
+});
+
+app.post("/api/sites/:id/revise", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  if (buildInFlight.has(site.status)) return reply.code(409).send({ error: "a build or revision is already running", runId: site.runId });
+  const parsed = siteReviseSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid revision" });
+  const run: RunRecord = {
+    id: randomUUID(),
+    projectId: site.id,
+    status: "reviewing",
+    startedAt: Date.now(),
+    channel: new RunChannel(),
+  };
+  runs.set(run.id, run);
+  site.status = "reviewing";
+  site.runId = run.id;
+  void runSiteRevision({
+    runtime,
+    site,
+    run,
+    pageId: parsed.data.pageId,
+    request: parsed.data.request,
+    target: {
+      nodeId: parsed.data.nodeId,
+      nodeIds: parsed.data.nodeIds,
+      agentId: parsed.data.agentId,
+      expand: parsed.data.expand,
+    },
+  }).catch((error) => {
+    app.log.error(error);
+    site.status = "done";
+    run.status = "failed";
+    run.finishedAt = Date.now();
+    run.channel.emit({
+      type: "revision.done",
+      revisionId: run.id,
+      success: false,
+      summary: error instanceof Error ? error.message : String(error),
+      cost: 0,
+      totalCost: site.cost,
+      pageId: parsed.data.pageId,
+      at: Date.now(),
+    });
+  });
+  return reply.code(202).send({ runId: run.id, siteId: site.id, pageId: parsed.data.pageId });
+});
+
+app.post("/api/sites/:id/pages/:pageId/sections", async (request, reply) => {
+  const { id, pageId } = request.params as { id: string; pageId: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  if (buildInFlight.has(site.status)) return reply.code(409).send({ error: "a build or revision is already running", runId: site.runId });
+  const parsed = siteAddSectionSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid section" });
+  const run: RunRecord = {
+    id: randomUUID(),
+    projectId: site.id,
+    status: "reviewing",
+    startedAt: Date.now(),
+    channel: new RunChannel(),
+  };
+  runs.set(run.id, run);
+  site.status = "reviewing";
+  site.runId = run.id;
+  void runSiteSectionAddition({
+    runtime,
+    site,
+    run,
+    pageId,
+    prompt: parsed.data.prompt,
+    title: parsed.data.title,
+    kind: parsed.data.kind,
+    insertIndex: parsed.data.insertIndex,
+    quality: parsed.data.quality,
+  }).catch((error) => {
+    app.log.error(error);
+    site.status = "done";
+    run.status = "failed";
+    run.finishedAt = Date.now();
+    run.channel.emit({
+      type: "section.add.done",
+      success: false,
+      summary: error instanceof Error ? error.message : String(error),
+      cost: 0,
+      at: Date.now(),
+    });
+  });
+  return reply.code(202).send({ runId: run.id, siteId: site.id, pageId });
+});
+
+app.post("/api/sites/:id/undo", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  if (buildInFlight.has(site.status)) return reply.code(409).send({ error: "a build or revision is already running" });
+  const pages = undoSite(site);
+  if (!pages) return reply.code(409).send({ error: "nothing to undo" });
+  return siteProjectView(site);
+});
+
+app.post("/api/sites/:id/selection/expand", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  const parsed = siteExpandSchema.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid selection" });
+  return { matches: expandSiteSelection(site, parsed.data.pageId, parsed.data.nodeIds) };
+});
+
+app.get("/api/sites/:id/export", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const site = siteProjects.get(id);
+  if (!site) return reply.code(404).send({ error: "site not found" });
+  if (!site.pages.some((page) => page.artifact)) return reply.code(409).send({ error: "site has no built pages" });
+  const archive = await buildSiteZip(site);
+  reply.header("Content-Type", "application/zip");
+  reply.header("Content-Disposition", `attachment; filename="site-${site.id}.zip"`);
+  return reply.send(archive);
 });
 
 app.get("/api/projects/:id", async (request, reply) => {

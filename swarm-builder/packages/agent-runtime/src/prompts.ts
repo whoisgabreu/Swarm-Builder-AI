@@ -1,4 +1,4 @@
-import type { BuildPlan, Node, SectionSpec } from "@swarm/dsl";
+import type { BuildPlan, Node, SectionSpec, SitePlan } from "@swarm/dsl";
 import type { CriticRequest, EditRequest, PlanSectionRequest, RefineRequest } from "./types.js";
 
 const RESPONSIVE_RULES = [
@@ -27,6 +27,24 @@ export const planPrompt = (brief: string): string =>
     "Return a BuildPlan. Prefer 5 to 7 sections. The plan must be executable by independent section agents.",
   ].join("\n");
 
+export const sitePlanPrompt = (input: { brief: string; brand?: string }): string =>
+  [
+    "Create a complete institutional website plan for this brief:",
+    input.brief.trim(),
+    input.brand ? `Brand/site name: ${input.brand}` : "",
+    "",
+    "Return a SitePlan with 2 to 6 pages and a shared layout.",
+    "The site must have a home page. Prefer: Home, Sobre, Serviços, Contato; add cases or equipe only when the brief justifies it.",
+    "Each page needs 2-5 sections. Sections must be independent and executable by separate agents.",
+    "The shared layout needs one nav SectionSpec and one footer SectionSpec.",
+    "Nav and footer content must list the pages as links; use page paths like /sobre, /servicos and /.",
+    "The contact page should use a visual form plus email, phone and WhatsApp links; no backend submission.",
+    "Keep the same theme, tone and navigation across all pages.",
+    "Return only JSON matching the SitePlan schema.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
 export const sectionPrompt = (input: {
   plan: BuildPlan;
   section: SectionSpec;
@@ -34,12 +52,16 @@ export const sectionPrompt = (input: {
   after?: Pick<SectionSpec, "id" | "kind" | "title">;
   retryNote?: string;
   variantHint?: string;
+  sitePages?: Array<{ slug: string; title: string; path: string }>;
 }): string =>
   [
     "Build exactly one section for this page.",
     "",
     `Section spec:\n${JSON.stringify(input.section, null, 2)}`,
     `Internal links must use only these anchors: ${["#top", ...input.plan.sections.map((section) => `#${section.id}`)].join(", ")}.`,
+    input.sitePages?.length
+      ? `Site pages for navigation links: ${input.sitePages.map((page) => `${page.title} (${page.path})`).join(", ")}. Use these paths for page links; do not use anchors for other pages.`
+      : "",
     "",
     `Page context:\n${JSON.stringify(compactPlan(input.plan), null, 2)}`,
     "",

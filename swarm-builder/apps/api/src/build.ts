@@ -122,9 +122,12 @@ export type BuildContext = {
   project: ProjectRecord;
   run: RunRecord;
   concurrency?: number;
+  prebuiltPlan?: BuildPlan;
+  prebuiltSessionId?: string;
+  sitePages?: import("@swarm/agent-runtime").SitePageLink[];
 };
 
-export const runBuild = async ({ runtime, project, run, concurrency = 4 }: BuildContext): Promise<void> => {
+export const runBuild = async ({ runtime, project, run, concurrency = 4, prebuiltPlan, prebuiltSessionId, sitePages }: BuildContext): Promise<void> => {
   const channel = run.channel;
   const started = now();
   const emit = channel.emit.bind(channel);
@@ -135,11 +138,13 @@ export const runBuild = async ({ runtime, project, run, concurrency = 4 }: Build
   emit({ type: "run.started", runId: run.id, projectId: project.id, prompt: project.prompt, at: now() });
 
   try {
-    const planned = await runtime.plan({ brief: project.prompt });
+    const planned = prebuiltPlan
+      ? { plan: normalizePlan(prebuiltPlan), sessionId: prebuiltSessionId ?? "", cost: 0 }
+      : await runtime.plan({ brief: project.prompt });
     const plan = normalizePlan(planned.plan);
     totalCost += planned.cost ?? 0;
     project.plan = plan;
-    project.parentSessionId = planned.sessionId;
+    if (planned.sessionId) project.parentSessionId = planned.sessionId;
     project.status = "building";
     run.status = "building";
 
@@ -276,6 +281,7 @@ export const runBuild = async ({ runtime, project, run, concurrency = 4 }: Build
               before: sections[index - 1],
               after: sections[index + 1],
               parentSessionId: planned.sessionId,
+              sitePages,
               variantHint: VARIANT_HINTS[(assignment.variant ?? 0) % VARIANT_HINTS.length],
             });
             totalCost += built.cost ?? 0;
@@ -372,6 +378,7 @@ export const runBuild = async ({ runtime, project, run, concurrency = 4 }: Build
             before: sections[index - 1],
             after: sections[index + 1],
             parentSessionId: planned.sessionId,
+            sitePages,
             retryNote,
           });
           totalCost += built.cost ?? 0;

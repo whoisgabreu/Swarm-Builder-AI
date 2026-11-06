@@ -1,4 +1,4 @@
-import type { BuildPlan, CriticResult, Node, SectionPatch, SectionSpec } from "@swarm/dsl";
+import type { BuildPlan, CriticResult, Node, SectionPatch, SectionSpec, SitePlan } from "@swarm/dsl";
 import type {
   AgentRuntime,
   CriticOutcome,
@@ -9,6 +9,9 @@ import type {
   PlanSectionRequest,
   PlanSectionResult,
   PlanResult,
+  SitePageLink,
+  SitePlanRequest,
+  SitePlanResult,
   RefineOutcome,
   RefineRequest,
   SectionRequest,
@@ -92,6 +95,77 @@ const mockPlan = (): BuildPlan => ({
   sections: sectionSpecs,
 });
 
+const siteSection = (id: string, kind: SectionSpec["kind"], title: string, goal: string, contentBrief: string): SectionSpec => ({
+  id,
+  kind,
+  title,
+  goal,
+  contentBrief,
+  layoutBrief: "Siga o design system do site e mantenha a hierarquia editorial.",
+  cursors: { count: 1, mode: "solo" },
+});
+
+const mockSitePlan = (): SitePlan => ({
+  title: "Clarity",
+  tagline: "Páginas claras, feitas por um time de agentes.",
+  description: "Site institucional da Clarity, uma plataforma de páginas com agentes de IA.",
+  theme,
+  pages: [
+    {
+      slug: "home",
+      title: "Início",
+      description: "Conheça a Clarity e comece a criar páginas melhores.",
+      role: "home",
+      sections: [
+        siteSection("hero", "hero", "Hero", "Apresentar a proposta.", "Headline clara, subheadline e CTA Começar grátis."),
+        siteSection("features", "features", "Recursos", "Mostrar os pilares.", "Três cards com design inteligente, conteúdo e publicação."),
+        siteSection("cta", "cta", "CTA final", "Converter visitantes.", "Bloco final com CTA Criar minha página."),
+      ],
+    },
+    {
+      slug: "sobre",
+      title: "Sobre",
+      description: "Conheça a história, o time e os princípios da Clarity.",
+      role: "about",
+      sections: [
+        siteSection("hero", "hero", "Sobre a Clarity", "Contar a origem da empresa.", "Texto editorial sobre o time e a missão."),
+        siteSection("values", "features", "Princípios", "Mostrar os valores.", "Três princípios: clareza, autonomia e craft."),
+      ],
+    },
+    {
+      slug: "servicos",
+      title: "Serviços",
+      description: "Veja como a Clarity ajuda times a publicar melhor.",
+      role: "services",
+      sections: [
+        siteSection("hero", "hero", "Serviços", "Explicar as ofertas.", "Headline sobre estratégia, design e publicação."),
+        siteSection("offer", "features", "O que fazemos", "Detalhar as ofertas.", "Cards de estratégia, design e operação."),
+        siteSection("cta", "cta", "Vamos conversar", "Gerar contato.", "CTA para a página de contato."),
+      ],
+    },
+    {
+      slug: "contato",
+      title: "Contato",
+      description: "Fale com o time da Clarity.",
+      role: "contact",
+      sections: [
+        siteSection("hero", "hero", "Contato", "Facilitar o primeiro contato.", "Headline acolhedora e links de e-mail, telefone e WhatsApp."),
+        siteSection("form", "custom", "Formulário", "Captar uma mensagem.", "Formulário visual com nome, e-mail, mensagem e botão Enviar. Sem backend."),
+      ],
+    },
+  ],
+  layout: {
+    nav: {
+      ...sectionSpecs[0]!,
+      contentBrief: "Logo Clarity, links Início, Sobre, Serviços, Contato e botão Começar grátis.",
+    },
+    footer: {
+      ...sectionSpecs[4]!,
+      contentBrief: "Clarity © 2026, links Início, Sobre, Serviços e Contato.",
+    },
+  },
+});
+
 const text = (id: string, value: string, style?: Node["style"]): Node => ({
   id,
   type: "text",
@@ -140,7 +214,7 @@ const card = (id: string, title: string, body: string, icon: string): Node =>
     },
   );
 
-const mockSection = (spec: SectionSpec): Node => {
+const mockSection = (spec: SectionSpec, sitePages?: SitePageLink[]): Node => {
   switch (spec.kind) {
     case "nav":
       return {
@@ -154,11 +228,21 @@ const mockSection = (spec: SectionSpec): Node => {
               text("nav-logo", "Clarity", { color: "var(--sw-text)", fontWeight: "750", fontSize: "18px" }),
               stack(
                 "nav-links",
-                [
-                  { id: "nav-product", type: "link", text: "Produto", href: "#features", style: { fontSize: "14px" } },
-                  { id: "nav-how", type: "link", text: "Como funciona", href: "#features", style: { fontSize: "14px" } },
-                  { id: "nav-pricing", type: "link", text: "Preços", href: "#cta", style: { fontSize: "14px" } },
-                ],
+                (sitePages?.length
+                  ? sitePages
+                  : [
+                      { slug: "home", title: "Início", path: "/" },
+                      { slug: "sobre", title: "Sobre", path: "/sobre" },
+                      { slug: "servicos", title: "Serviços", path: "/servicos" },
+                      { slug: "contato", title: "Contato", path: "/contato" },
+                    ]
+                ).map((page) => ({
+                  id: `nav-${page.slug}`,
+                  type: "link" as const,
+                  text: page.title,
+                  href: page.path,
+                  style: { fontSize: "14px" },
+                })),
                 { display: "flex", flexDirection: "row", gap: "24px", alignItems: "center" },
               ),
               button("nav-cta", "Começar grátis", { padding: "9px 16px", fontSize: "13px" }),
@@ -285,16 +369,57 @@ const mockSection = (spec: SectionSpec): Node => {
         children: [
           stack("footer-inner", [
             text("footer-brand", "Clarity", { color: "var(--sw-text)", fontWeight: "700" }),
-            stack("footer-links", [
-              { id: "footer-privacy", type: "link", text: "Privacidade", href: "#" },
-              { id: "footer-terms", type: "link", text: "Termos", href: "#" },
-              { id: "footer-contact", type: "link", text: "Contato", href: "#" },
-            ], { display: "flex", flexDirection: "row", gap: "20px" }),
+            stack("footer-links", (sitePages?.length
+              ? sitePages
+              : [
+                  { slug: "home", title: "Início", path: "/" },
+                  { slug: "sobre", title: "Sobre", path: "/sobre" },
+                  { slug: "servicos", title: "Serviços", path: "/servicos" },
+                  { slug: "contato", title: "Contato", path: "/contato" },
+                ]
+            ).map((page) => ({
+              id: `footer-${page.slug}`,
+              type: "link" as const,
+              text: page.title,
+              href: page.path,
+            })), { display: "flex", flexDirection: "row", gap: "20px" }),
             text("footer-copy", "© 2026 Clarity. Feito por agentes, revisado por humanos.", { fontSize: "12px" }),
           ], { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: "24px" }),
         ],
       };
     default:
+      if (/formul/i.test(spec.title)) {
+        return {
+          id: spec.id,
+          type: "section",
+          children: [
+            stack(`${spec.id}-inner`, [
+              heading(`${spec.id}-title`, "Fale com a gente", 2),
+              text(`${spec.id}-text`, "Conte um pouco sobre o seu projeto. Responderemos em até um dia útil."),
+              {
+                id: `${spec.id}-name`,
+                type: "input",
+                props: { type: "text", name: "name", placeholder: "Seu nome" },
+                a11y: { label: "Seu nome" },
+              },
+              {
+                id: `${spec.id}-email`,
+                type: "input",
+                props: { type: "email", name: "email", placeholder: "seu@email.com" },
+                a11y: { label: "Seu e-mail" },
+              },
+              {
+                id: `${spec.id}-message`,
+                type: "input",
+                props: { type: "text", name: "message", placeholder: "Como podemos ajudar?" },
+                a11y: { label: "Mensagem" },
+              },
+              button(`${spec.id}-submit`, "Enviar mensagem"),
+              text(`${spec.id}-direct`, "Prefere e-mail? ola@clarity.example · +55 11 99999-0000", { fontSize: "13px" }),
+            ], { maxWidth: "640px", margin: "0 auto", gap: "14px" }),
+          ],
+        };
+      }
       return {
         id: spec.id,
         type: "section",
@@ -310,8 +435,12 @@ export class MockRuntime implements AgentRuntime {
     return { plan: mockPlan(), sessionId: "mock-architect", cost: 0 };
   }
 
+  async planSite(_request: SitePlanRequest): Promise<SitePlanResult> {
+    return { plan: mockSitePlan(), sessionId: "mock-site-architect", cost: 0 };
+  }
+
   async buildSection(request: SectionRequest): Promise<SectionResult> {
-    const patch: SectionPatch = { sectionId: request.section.id, node: mockSection(request.section) };
+    const patch: SectionPatch = { sectionId: request.section.id, node: mockSection(request.section, request.sitePages) };
     return { patch, sessionId: `mock-${request.section.id}`, cost: 0 };
   }
 

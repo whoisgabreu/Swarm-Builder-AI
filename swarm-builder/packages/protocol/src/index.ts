@@ -1,4 +1,4 @@
-import type { BuildPlan, CursorRole, Style } from "@swarm/dsl";
+import type { BuildPlan, CursorRole, SitePageRole, SitePlan, Style } from "@swarm/dsl";
 
 export type AgentRole = "architect" | "section" | "critic";
 
@@ -11,6 +11,7 @@ export type AgentInfo = {
   cursorRole?: CursorRole;
   groupId?: string;
   variant?: number;
+  pageId?: string;
 };
 
 export type RenderOp =
@@ -42,6 +43,7 @@ export type OwnershipEntry = {
   agentId: string;
   sectionId: string;
   cursorRole?: CursorRole;
+  pageId?: string;
 };
 
 export type RunStats = {
@@ -61,7 +63,7 @@ export type BuildEvent =
   | { type: "plan.ready"; plan: BuildPlan; agents: AgentInfo[]; at: number }
   | { type: "plan.updated"; plan: BuildPlan; at: number }
   | { type: "agent.spawned"; agent: AgentInfo; at: number }
-  | { type: "task.started"; taskId: string; sectionId: string; agent: AgentInfo; at: number }
+  | { type: "task.started"; taskId: string; sectionId: string; agent: AgentInfo; pageId?: string; at: number }
   | { type: "variant.started"; sectionId: string; agent: AgentInfo; variant: number; at: number }
   | { type: "variant.selected"; sectionId: string; agent: AgentInfo; variant: number; at: number }
   | { type: "variant.discarded"; sectionId: string; agent: AgentInfo; variant: number; at: number }
@@ -72,13 +74,14 @@ export type BuildEvent =
       nodeCount: number;
       sessionId: string;
       fallback?: boolean;
+      pageId?: string;
       at: number;
     }
-  | { type: "task.failed"; sectionId: string; message: string; at: number }
-  | { type: "task.fallback"; sectionId: string; message: string; at: number }
-  | { type: "preview.updated"; html: string; at: number }
-  | { type: "preview.sync"; html: string; force?: boolean; at: number }
-  | { type: "render.ops"; batch: RenderBatch; at: number }
+  | { type: "task.failed"; sectionId: string; message: string; pageId?: string; at: number }
+  | { type: "task.fallback"; sectionId: string; message: string; pageId?: string; at: number }
+  | { type: "preview.updated"; html: string; pageId?: string; at: number }
+  | { type: "preview.sync"; html: string; force?: boolean; pageId?: string; at: number }
+  | { type: "render.ops"; batch: RenderBatch; pageId?: string; at: number }
   | { type: "ownership.updated"; ownership: Record<string, OwnershipEntry>; at: number }
   | { type: "audit.ready"; available: boolean; issues: number; warning?: string; at: number }
   | {
@@ -105,6 +108,7 @@ export type BuildEvent =
       sectionId?: string;
       nodeId?: string;
       request: string;
+      pageId?: string;
       at: number;
     }
   | {
@@ -114,19 +118,67 @@ export type BuildEvent =
       sectionId?: string;
       nodeIds: string[];
       nodeCount: number;
+      pageId?: string;
       at: number;
     }
-  | { type: "revision.done"; revisionId: string; agentId?: string; success: boolean; summary: string; cost: number; at: number }
+  | { type: "revision.done"; revisionId: string; agentId?: string; success: boolean; summary: string; cost: number; totalCost?: number; pageId?: string; at: number }
   | { type: "revision.undone"; revisionId?: string; at: number }
   | { type: "section.add.started"; prompt: string; insertIndex: number; at: number }
   | { type: "section.added"; sectionId: string; section: import("@swarm/dsl").SectionSpec; index: number; agents: AgentInfo[]; at: number }
   | { type: "section.add.done"; sectionId?: string; success: boolean; summary: string; cost: number; at: number }
   | { type: "run.done"; html: string; stats: RunStats; at: number }
-  | { type: "run.failed"; message: string; at: number };
+  | { type: "run.failed"; message: string; pageId?: string; at: number }
+  | { type: "site.plan.ready"; plan: SitePlan; agents: AgentInfo[]; at: number }
+  | { type: "site.layout.started"; at: number }
+  | { type: "site.layout.done"; at: number }
+  | { type: "site.page.started"; pageId: string; at: number }
+  | { type: "site.page.done"; page: SitePageView; at: number }
+  | { type: "site.done"; pages: SitePageView[]; stats: SiteStats; at: number };
 
 export type SequencedEvent = BuildEvent & { seq: number };
 
 export type BuildStatus = "idle" | "planning" | "building" | "reviewing" | "done" | "failed" | "aborted";
+
+export type SitePageView = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  role: SitePageRole;
+  status: BuildStatus;
+  html?: string;
+  sections: number;
+  nodes: number;
+  cost: number;
+  fallbacks: number;
+  error?: string;
+};
+
+export type SiteStats = {
+  pages: number;
+  sections: number;
+  nodes: number;
+  cost: number;
+  durationMs: number;
+  fallbacks: number;
+  issues: number;
+  fixed: number;
+  model?: string;
+};
+
+export type SiteProjectView = {
+  id: string;
+  prompt: string;
+  status: BuildStatus;
+  createdAt: number;
+  plan?: SitePlan;
+  pages: SitePageView[];
+  agents?: AgentInfo[];
+  ownership?: Record<string, OwnershipEntry>;
+  cost?: number;
+  stats?: SiteStats;
+  error?: string;
+};
 
 export type ProjectView = {
   id: string;

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BuildPlan, SectionKind } from "@swarm/dsl";
 import { PREVIEW_SHELL } from "@swarm/swarm-runtime";
+import { SiteStudio } from "./SiteStudio.js";
+import { ModeToggle, type StudioMode } from "./ModeToggle.js";
 import type {
   AgentInfo,
   BuildEvent,
@@ -135,6 +137,8 @@ const describe = (event: SequencedEvent): string => {
       return `Concluído em ${(event.stats.durationMs / 1000).toFixed(1)}s`;
     case "run.failed":
       return `Falha: ${event.message}`;
+    default:
+      return event.type;
   }
 };
 
@@ -166,6 +170,7 @@ export function App() {
   const [error, setError] = useState("");
   const [events, setEvents] = useState<SequencedEvent[]>([]);
   const [runtimeName, setRuntimeName] = useState("runtime");
+  const [mode, setMode] = useState<StudioMode>("landing");
   const [tour, setTour] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -674,6 +679,8 @@ export function App() {
     await navigator.clipboard.writeText(html).catch(() => {});
   }, [html]);
 
+  if (mode === "site") return <SiteStudio onModeChange={setMode} />;
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -685,6 +692,7 @@ export function App() {
           </div>
         </div>
         <div className="topbar-meta">
+          <ModeToggle mode={mode} onChange={setMode} />
           <span className={`phase phase-${phase}`}>{displayStatus}</span>
           <span className="dot-live" />
           <span>{runtimeName} runtime</span>

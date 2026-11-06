@@ -1,4 +1,4 @@
-import type { BuildPlan, CriticResult, CursorRole, Node, RefinementResult, Responsive, SectionKind, SectionPatch, SectionSpec } from "@swarm/dsl";
+import type { BuildPlan, CriticResult, CursorRole, Node, RefinementResult, Responsive, SectionKind, SectionPatch, SectionSpec, SitePlan } from "@swarm/dsl";
 
 export type PlanRequest = {
   brief: string;
@@ -10,6 +10,23 @@ export type PlanResult = {
   cost?: number;
 };
 
+export type SitePlanRequest = {
+  brief: string;
+  brand?: string;
+};
+
+export type SitePlanResult = {
+  plan: SitePlan;
+  sessionId: string;
+  cost?: number;
+};
+
+export type SitePageLink = {
+  slug: string;
+  title: string;
+  path: string;
+};
+
 export type SectionRequest = {
   plan: BuildPlan;
   section: SectionSpec;
@@ -18,6 +35,7 @@ export type SectionRequest = {
   parentSessionId?: string;
   retryNote?: string;
   variantHint?: string;
+  sitePages?: SitePageLink[];
 };
 
 export type SectionResult = {
@@ -116,6 +134,7 @@ export type CriticOutcome = {
 export interface AgentRuntime {
   readonly name: string;
   plan(request: PlanRequest): Promise<PlanResult>;
+  planSite(request: SitePlanRequest): Promise<SitePlanResult>;
   planSection(request: PlanSectionRequest): Promise<PlanSectionResult>;
   buildSection(request: SectionRequest): Promise<SectionResult>;
   refineSection(request: RefineRequest): Promise<RefineOutcome>;

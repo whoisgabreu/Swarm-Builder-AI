@@ -52,6 +52,13 @@
       "prompt": "{file:./prompts/section-planner.md}",
       "temperature": 0.35,
       "steps": 2
+    },
+    "swarm-site-architect": {
+      "description": "Plans an institutional multi-page website as a structured SitePlan.",
+      "mode": "primary",
+      "prompt": "{file:./prompts/site-architect.md}",
+      "temperature": 0.4,
+      "steps": 2
     }
   }
 }

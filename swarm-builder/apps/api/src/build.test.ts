@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BuildPlan, CriticResult, Node, SectionPatch } from "@swarm/dsl";
-import type { AgentRuntime, CriticOutcome, CriticRequest, EditOutcome, EditRequest, PlanRequest, PlanResult, PlanSectionRequest, PlanSectionResult, RefineOutcome, RefineRequest, SectionRequest, SectionResult } from "@swarm/agent-runtime";
+import type { AgentRuntime, CriticOutcome, CriticRequest, EditOutcome, EditRequest, PlanRequest, PlanResult, PlanSectionRequest, PlanSectionResult, RefineOutcome, RefineRequest, SectionRequest, SectionResult, SitePlanRequest, SitePlanResult } from "@swarm/agent-runtime";
 import { runBuild } from "./build.js";
 import { runRevision, undoRevision, expandSelection } from "./revise.js";
 import { runSectionAddition } from "./add-section.js";
@@ -58,6 +58,9 @@ const runtime = (overrides: Partial<AgentRuntime> = {}): AgentRuntime => ({
   name: "test",
   async plan(_request: PlanRequest): Promise<PlanResult> {
     return { plan, sessionId: "planner" };
+  },
+  async planSite(_request: SitePlanRequest): Promise<SitePlanResult> {
+    throw new Error("site planning is not used in landing tests");
   },
   async planSection(request: PlanSectionRequest): Promise<PlanSectionResult> {
     return {

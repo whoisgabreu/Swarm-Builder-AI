@@ -69,6 +69,7 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
   var toastEl = null;
   var toastTimer = null;
   var tourEnabled = true;
+  var siteMode = false;
   var tourPausedUntil = 0;
   var lastFollow = 0;
   var nodeEls = Object.create(null);
@@ -779,16 +780,22 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
   document.addEventListener("click", function(event){
     if (selectMode) return;
     var target = event.target;
-    var link = target && target.closest ? target.closest('a[href^="#"]') : null;
+    var link = target && target.closest ? target.closest("a[href]") : null;
     if (!link) return;
     var href = link.getAttribute("href") || "";
     if (href.length <= 1) return;
-    var anchor = null;
-    try { anchor = document.querySelector(href); } catch (_) { anchor = null; }
-    if (!anchor) return;
+    if (href.charAt(0) === "#") {
+      var anchor = null;
+      try { anchor = document.querySelector(href); } catch (_) { anchor = null; }
+      if (!anchor) return;
+      event.preventDefault();
+      anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+      try { history.replaceState(null, "", href); } catch (_) {}
+      return;
+    }
+    if (!siteMode || /^(https?:|mailto:|tel:|javascript:)/i.test(href) || href.slice(0, 2) === "//") return;
     event.preventDefault();
-    anchor.scrollIntoView({ behavior: "smooth", block: "start" });
-    try { history.replaceState(null, "", href); } catch (_) {}
+    notifyParent("page.navigate", { href: href });
   }, true);
 
   document.addEventListener("click", function(event){
@@ -830,6 +837,7 @@ html,body{margin:0;min-height:100%;background:#0b0b0f;color:#f5f3ef;font-family:
     if (!data || data.source !== "swarm-studio") return;
     if (data.control) {
       if (typeof data.control.tour === "boolean") tourEnabled = data.control.tour;
+      if (typeof data.control.siteMode === "boolean") siteMode = data.control.siteMode;
       if (typeof data.control.select === "boolean") {
         setSelectMode(data.control.select);
         if (!data.control.select && composer) closeComposer(true);

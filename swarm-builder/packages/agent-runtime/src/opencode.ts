@@ -5,6 +5,7 @@ import {
   NewSectionPlanSchema,
   RefinementResultSchema,
   SectionPatchSchema,
+  SitePlanSchema,
   z,
   type BuildPlan,
   type CriticResult,
@@ -12,8 +13,9 @@ import {
   type Node,
   type RefinementResult,
   type SectionPatch,
+  type SitePlan,
 } from "@swarm/dsl";
-import { criticPrompt, editPrompt, planPrompt, planSectionPrompt, refinePrompt, sectionPrompt } from "./prompts.js";
+import { criticPrompt, editPrompt, planPrompt, planSectionPrompt, refinePrompt, sectionPrompt, sitePlanPrompt } from "./prompts.js";
 import { startOpencodeServer, type OpencodeServer } from "./server.js";
 import type {
   AgentRuntime,
@@ -25,6 +27,8 @@ import type {
   PlanSectionRequest,
   PlanSectionResult,
   PlanResult,
+  SitePlanRequest,
+  SitePlanResult,
   RefineOutcome,
   RefineRequest,
   SectionRequest,
@@ -225,6 +229,18 @@ export class OpenCodeRuntime implements AgentRuntime {
       agent: "swarm-architect",
       prompt: planPrompt(request.brief),
       schema: BuildPlanSchema,
+      model: this.model,
+      timeoutMs: this.plannerTimeoutMs,
+    });
+    return { plan: result.value, sessionId: result.sessionId, cost: result.cost };
+  }
+
+  async planSite(request: SitePlanRequest): Promise<SitePlanResult> {
+    const result = await this.runStructured<SitePlan>({
+      title: "Swarm Site Architect — SitePlan",
+      agent: "swarm-site-architect",
+      prompt: sitePlanPrompt(request),
+      schema: SitePlanSchema,
       model: this.model,
       timeoutMs: this.plannerTimeoutMs,
     });
